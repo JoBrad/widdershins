@@ -15,6 +15,8 @@ const httpsnippetGenerator = require('./httpsnippetGenerator');
 /* "Unlicensed", public domain */
 const statusCodes = require('./statusCodes.json');
 
+// @TODO: Make a global options-parsing function!
+
 const contentTypes = {
     xml: ['^(application|text|image){1}\\/(.*\\+){0,1}xml(;){0,1}(\\s){0,}(charset=.*){0,}$'],
     json: ['^(application|text){1}\\/(.*\\+){0,1}json(;){0,1}(\\s){0,}(charset=.*){0,}$'],
@@ -390,7 +392,7 @@ function clean(obj) {
     }});
     return obj;
 }
-
+// Returns a sample request or response from the provided object. If an example is not created, uses openapi-sampler to generate one
 function getSampleInner(orig,options,samplerOptions,api){
     if (!options.samplerErrors) options.samplerErrors = new Map();
     let obj = circularClone(orig);
@@ -440,7 +442,7 @@ function getSampleInner(orig,options,samplerOptions,api){
     return obj;
 }
 
-function getSample(orig,options,samplerOptions,api){
+function getSample(orig,options,samplerOptions,api){ // Returns a example request or response from the provided object
     if (orig && orig.example) return orig.example;
     let result = getSampleInner(orig,options,samplerOptions,api);
     result = clean(result);

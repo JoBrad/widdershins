@@ -12,6 +12,7 @@ const dot = require('dot');
 dot.templateSettings.strip = false;
 dot.templateSettings.varname = 'data';
 
+const titlecase = require('@nielse63/titlecase');
 const xml = require('jgexml/json2xml.js');
 const jptr = require('reftools/lib/jptr.js').jptr;
 const dereference = require('reftools/lib/dereference.js').dereference;
@@ -22,7 +23,28 @@ const common = require('./common.js');
 
 let templates;
 
-function convertToToc(source,data) {
+/**
+ * Returns the version number, or default_version, if
+ * no version can be found.
+ *
+ * @param {object} oasObj
+ * @param {string} oasObj
+ * @returns {string}
+ */
+function getVersionNumber(oasObj, default_version) {
+    let return_value = default_version || 'v1.0.0';
+    if (oasObj.api) {
+        if (oasObj.api.info && oasObj.api.info.version && typeof oasObj.api.info.version === 'string') {
+            return_value = oasObj.api.info.version;
+        }
+    }
+    if (!return_value.toLowerCase().startsWith('v')) {
+        return_value = 'v' + return_value;
+    }
+    return return_value;
+}
+
+function convertToToc(source, data) {
     let resources = {};
     resources[data.translations.defaultTag] = { count: 0, methods: {} };
     if (source.tags) {
@@ -62,7 +84,7 @@ function convertToToc(source,data) {
     return resources;
 }
 
-function getTagGroup(tag, tagGroups){
+function getTagGroup(tag, tagGroups) {
     if (tagGroups) {
         for (let group of tagGroups) {
             if (group.tags.indexOf(tag) > -1) {
@@ -73,7 +95,7 @@ function getTagGroup(tag, tagGroups){
     return tag;
 }
 
-function fakeProdCons(data) {
+function fakeProdCons(data) { // Creates sample request/response text
     data.produces = [];
     data.consumes = [];
     data.bodyParameter = {};
@@ -92,21 +114,19 @@ function fakeProdCons(data) {
                 data.bodyParameter.present = true;
                 data.bodyParameter.contentType = rb;
                 if (op.requestBody["x-widdershins-oldRef"]) {
-                    data.bodyParameter.refName = op.requestBody["x-widdershins-oldRef"].replace('#/components/requestBodies/','');
+                    data.bodyParameter.refName = op.requestBody["x-widdershins-oldRef"].replace('#/components/requestBodies/', '');
                 }
                 data.bodyParameter.schema = op.requestBody.content[rb].schema;
                 if (op.requestBody.content[rb].examples) {
                     let key = Object.keys(op.requestBody.content[rb].examples)[0];
                     data.bodyParameter.exampleValues.object = op.requestBody.content[rb].examples[key].value;
                     data.bodyParameter.exampleValues.description = op.requestBody.content[rb].examples[key].description;
-                }
-                else {
-                    data.bodyParameter.exampleValues.object = common.getSample(op.requestBody.content[rb].schema,data.options,{skipReadOnly:true},data.api);
+                } else {
+                    data.bodyParameter.exampleValues.object = common.getSample(op.requestBody.content[rb].schema, data.options, { skipReadOnly: true }, data.api);
                 }
                 if (typeof data.bodyParameter.exampleValues.object === 'object') {
-                    data.bodyParameter.exampleValues.json = safejson(data.bodyParameter.exampleValues.object,null,2);
-                }
-                else {
+                    data.bodyParameter.exampleValues.json = safejson(data.bodyParameter.exampleValues.object, null, 2);
+                } else {
                     data.bodyParameter.exampleValues.json = data.bodyParameter.exampleValues.object;
                 }
             }
@@ -114,7 +134,7 @@ function fakeProdCons(data) {
     }
 }
 
-function getParameters(data) {
+function getParameters(data) { // Gathers and formats all parameters (security and otherwise). Populates data.allHeaders, data.headerParameters, data.requiredParameters, data.requiredQueryString, data.queryString
 
     function stupidity(varname) {
         let s = encodeURIComponent(varname);
@@ -168,28 +188,27 @@ function getParameters(data) {
             param.originalType = pSchema.type;
             param.safeType = pSchema.type || common.inferType(pSchema);
             if (pSchema.format) {
-                param.safeType = param.safeType+'('+pSchema.format+')';
+                param.safeType = param.safeType + '(' + pSchema.format + ')';
             }
             if ((param.safeType === 'array') && (pSchema.items)) {
                 let itemsType = pSchema.items.type;
                 if (!itemsType) {
                     itemsType = common.inferType(pSchema.items);
                 }
-                param.safeType = 'array['+itemsType+']';
+                param.safeType = 'array[' + itemsType + ']';
             }
             if (pSchema["x-widdershins-oldRef"]) {
-                let schemaName = pSchema["x-widdershins-oldRef"].replace('#/components/schemas/','');
-                param.safeType = '['+schemaName+'](#schema'+schemaName.toLowerCase()+')';
+                let schemaName = pSchema["x-widdershins-oldRef"].replace('#/components/schemas/', '');
+                param.safeType = '[' + schemaName + '](#schema' + schemaName.toLowerCase() + ')';
             }
-            if (param.refName) param.safeType = '['+param.refName+'](#schema'+param.refName.toLowerCase()+')';
+            if (param.refName) param.safeType = '[' + param.refName + '](#schema' + param.refName.toLowerCase() + ')';
         }
         if (pSchema) {
-            param.exampleValues.object = param.example || param.default || common.getSample(pSchema,data.options,{skipReadOnly:true},data.api);
+            param.exampleValues.object = param.example || param.default || common.getSample(pSchema, data.options, { skipReadOnly: true }, data.api);
             if (typeof param.exampleValues.object === 'object') {
-                param.exampleValues.json = safejson(param.exampleValues.object,null,2);
-            }
-            else {
-                param.exampleValues.json = "'"+param.exampleValues.object+"'";
+                param.exampleValues.json = safejson(param.exampleValues.object, null, 2);
+            } else {
+                param.exampleValues.json = "'" + param.exampleValues.object + "'";
             }
         }
         if (param.description === 'undefined') { // yes, the string
@@ -217,8 +236,8 @@ function getParameters(data) {
             if (param.style === 'matrix') template += ';';
             template += stupidity(param.name);
             template += param.explode ? '*}' : '}';
-            uriTemplateStr = uriTemplateStr.split('{'+param.name+'}').join(template);
-            requiredUriTemplateStr = requiredUriTemplateStr.split('{'+param.name+'}').join(template);
+            uriTemplateStr = uriTemplateStr.split('{' + param.name + '}').join(template);
+            requiredUriTemplateStr = requiredUriTemplateStr.split('{' + param.name + '}').join(template);
         }
         if (param.in === 'query') {
             let isFirst = uriTemplateStr.indexOf('{&') < 0;
@@ -242,23 +261,22 @@ function getParameters(data) {
     }
 
     let effSecurity;
-    let existingAuth = data.allHeaders.find(function(e,i,a){
+    let existingAuth = data.allHeaders.find(function(e, i, a) {
         return e.name.toLowerCase() === 'authorization';
     });
     if (data.operation.security) {
         if (data.operation.security.length) {
             effSecurity = Object.keys(data.operation.security[0]);
         }
-    }
-    else if (data.api.security && data.api.security.length) {
+    } else if (data.api.security && data.api.security.length) {
         effSecurity = Object.keys(data.api.security[0]);
     }
     if (effSecurity && effSecurity.length && data.api.components && data.api.components.securitySchemes) {
         for (let ess of effSecurity) {
             if (data.api.components.securitySchemes[ess]) {
                 let secScheme = data.api.components.securitySchemes[ess];
-                if (!existingAuth && ((secScheme.type === 'oauth2') || (secScheme.type === 'openIdConnect') ||
-                    ((secScheme.type === 'http') && (secScheme.scheme === 'bearer')))) {
+                if (!existingAuth && (  (secScheme.type === 'oauth2') || (secScheme.type === 'openIdConnect') ||
+                                        ((secScheme.type === 'http') && (secScheme.scheme === 'bearer')) ) ) {
                     let authHeader = {};
                     authHeader.name = 'Authorization';
                     authHeader.type = 'string';
@@ -268,8 +286,7 @@ function getParameters(data) {
                     authHeader.exampleValues.object = 'Bearer {access-token}';
                     authHeader.exampleValues.json = "'" + authHeader.exampleValues.object + "'";
                     data.allHeaders.push(authHeader);
-                }
-                else if ((secScheme.type === 'apiKey') && (secScheme.in === 'header')) {
+                } else if ((secScheme.type === 'apiKey') && (secScheme.in === 'header')) {
                     let authHeader = {};
                     authHeader.name = secScheme.name;
                     authHeader.type = 'string';
@@ -280,6 +297,16 @@ function getParameters(data) {
                     if (data.options.customApiKeyValue) {
                         authHeader.exampleValues.object = data.options.customApiKeyValue;
                     }
+                    authHeader.exampleValues.json = "'" + authHeader.exampleValues.object + "'";
+                    data.allHeaders.push(authHeader);
+                } else if ((secScheme.type === 'http') && (secScheme.scheme === 'basic')) {
+                    let authHeader = {};
+                    authHeader.name = 'Authorization';
+                    authHeader.type = 'string';
+                    authHeader.in = 'header';
+                    authHeader.isAuth = true;
+                    authHeader.exampleValues = {};
+                    authHeader.exampleValues.object = 'Basic {hashed_credentials}';
                     authHeader.exampleValues.json = "'" + authHeader.exampleValues.object + "'";
                     data.allHeaders.push(authHeader);
                 }
@@ -308,13 +335,12 @@ function getBodyParameterExamples(data) {
     let xmlWrap = false;
     if (data.bodyParameter.schema && data.bodyParameter.schema.xml) {
         xmlWrap = data.bodyParameter.schema.xml.name;
-    }
-    else if (data.bodyParameter.schema && data.bodyParameter.schema["x-widdershins-oldRef"]) {
+    } else if (data.bodyParameter.schema && data.bodyParameter.schema["x-widdershins-oldRef"]) {
         xmlWrap = data.bodyParameter.schema["x-widdershins-oldRef"].split('/').pop();
     }
     if (common.doContentType(data.consumes, 'json')) {
         content += '```json\n';
-        content += safejson(obj,null,2) + '\n';
+        content += safejson(obj, null, 2) + '\n';
         content += '```\n\n';
     }
     if (common.doContentType(data.consumes, 'yaml')) {
@@ -340,7 +366,7 @@ function getBodyParameterExamples(data) {
     return content;
 }
 
-function fakeBodyParameter(data) {
+function fakeBodyParameter(data) { // @TODO: This returns the full ref instead of just properties!
     if (!data.parameters) data.parameters = [];
     let bodyParams = [];
     if (data.bodyParameter.schema) {
@@ -352,12 +378,12 @@ function fakeBodyParameter(data) {
         param.description = data.operation.requestBody.description;
         param.refName = data.bodyParameter.refName;
         if (!data.options.omitBody || param.schema["x-widdershins-oldRef"]) {
-           bodyParams.push(param);
+            bodyParams.push(param);
         }
 
         if ((param.schema.type === 'object') && (data.options.expandBody || (!param.schema["x-widdershins-oldRef"]))) {
             let offset = (data.options.omitBody ? -1 : 0);
-            let props = common.schemaToArray(data.bodyParameter.schema,offset,{trim:true},data);
+            let props = common.schemaToArray(data.bodyParameter.schema, offset, { trim: true }, data);
 
             for (let block of props) {
                 for (let prop of block.rows) {
@@ -379,8 +405,8 @@ function fakeBodyParameter(data) {
 
 function mergePathParameters(data) {
     if (!data.parameters) data.parameters = [];
-    data.parameters = data.parameters.concat(data.method.pathParameters||[]);
-    data.parameters = data.parameters.filter((param, index, self) => self.findIndex((p) => {return p.name === param.name && p.in === param.in; }) === index || param.in === 'body');
+    data.parameters = data.parameters.concat(data.method.pathParameters || []);
+    data.parameters = data.parameters.filter((param, index, self) => self.findIndex((p) => { return p.name === param.name && p.in === param.in; }) === index || param.in === 'body');
 }
 
 function getResponses(data) {
@@ -390,14 +416,19 @@ function getResponses(data) {
         let entry = {};
         entry.status = r;
         entry.meaning = (r === 'default' ? data.translations.responseDefault : data.translations.responseUnknown);
-        var url = '';
-        for (var s in common.statusCodes) {
-            if (common.statusCodes[s].code === r) {
-                entry.meaning = common.statusCodes[s].phrase;
-                url = common.statusCodes[s].spec_href;
-                break;
-            }
+        let url = '';
+        let statusCodeInfo = common.statusCodes.find( function(val) { return val.code === r; } ) || common.statusCodes.find( function(val) { return val.code === r.slice(0, 1) + 'xx'; } );
+        if (statusCodeInfo) {
+            entry.meaning = statusCodeInfo.phrase;
+            url = statusCodeInfo.spec_href;
         }
+        // for (var s in common.statusCodes) { //
+        //     if (common.statusCodes[s].code === r) {
+        //         entry.meaning = common.statusCodes[s].phrase;
+        //         url = common.statusCodes[s].spec_href;
+        //         break;
+        //     }
+        // }
         if (url) entry.meaning = '[' + entry.meaning + '](' + url + ')';
         entry.description = (typeof response.description === 'string' ? response.description.trim() : undefined);
         entry.schema = data.translations.schemaNone;
@@ -408,11 +439,10 @@ function getResponses(data) {
                 entry.schema = data.translations.schemaInline;
             }
             if (contentType.schema && contentType.schema["x-widdershins-oldRef"] && contentType.schema["x-widdershins-oldRef"].startsWith('#/components/')) {
-                let schemaName = contentType.schema["x-widdershins-oldRef"].replace('#/components/schemas/','');
-                entry.schema = '['+schemaName+'](#schema'+schemaName.toLowerCase()+')';
+                let schemaName = contentType.schema["x-widdershins-oldRef"].replace('#/components/schemas/', '');
+                entry.schema = '[' + schemaName + '](#schema' + schemaName.toLowerCase() + ')';
                 entry.$ref = true;
-            }
-            else {
+            } else {
                 if (contentType.schema && contentType.schema.type && (contentType.schema.type !== 'object') && (contentType.schema.type !== 'array')) {
                     entry.schema = contentType.schema.type;
                 }
@@ -429,12 +459,10 @@ function convertExample(ex) {
     if (typeof ex === 'string') {
         try {
             return yaml.safeLoad(ex);
-        }
-        catch (e) {
+        } catch (e) {
             return ex;
         }
-    }
-    else return ex;
+    } else return ex;
 }
 
 function getResponseExamples(data) {
@@ -450,29 +478,26 @@ function getResponseExamples(data) {
             if (contentType.examples) {
                 for (let ctei in contentType.examples) {
                     let example = contentType.examples[ctei];
-                    examples.push({description:example.description||response.description,value: common.clean(convertExample(example.value)), cta: cta});
+                    examples.push({ description: example.description || response.description, value: common.clean(convertExample(example.value)), cta: cta });
                 }
-            }
-            else if (contentType.example) {
-                examples.push({description:resp+' '+data.translations.response,value:common.clean(convertExample(contentType.example)), cta: cta});
-            }
-            else if (contentType.schema) {
+            } else if (contentType.example) {
+                examples.push({ description: resp + ' ' + data.translations.response, value: common.clean(convertExample(contentType.example)), cta: cta });
+            } else if (contentType.schema) {
                 let obj = contentType.schema;
                 let autoCT = '';
                 if (common.doContentType(cta, 'json')) autoCT = 'json';
                 if (common.doContentType(cta, 'yaml')) autoCT = 'yaml';
-                if (common.doContentType(cta, 'xml'))  autoCT = 'xml';
+                if (common.doContentType(cta, 'xml')) autoCT = 'xml';
 
                 if (!autoDone[autoCT]) {
                     autoDone[autoCT] = true;
                     let xmlWrap = false;
                     if (obj && obj.xml && obj.xml.name) {
                         xmlWrap = obj.xml.name;
-                    }
-                    else if (obj["x-widdershins-oldRef"]) {
+                    } else if (obj["x-widdershins-oldRef"]) {
                         xmlWrap = obj["x-widdershins-oldRef"].split('/').pop();
                     }
-                    examples.push({description:resp+' '+data.translations.response,value:common.getSample(obj,data.options,{skipWriteOnly:true},data.api), cta: cta, xmlWrap: xmlWrap});
+                    examples.push({ description: resp + ' ' + data.translations.response, value: common.getSample(obj, data.options, { skipWriteOnly: true }, data.api), cta: cta, xmlWrap: xmlWrap });
                 }
             }
         }
@@ -480,7 +505,7 @@ function getResponseExamples(data) {
     let lastDesc = '';
     for (let example of examples) {
         if (example.description && example.description !== lastDesc) {
-            content += '> '+example.description+'\n\n';
+            content += '> ' + example.description + '\n\n';
             lastDesc = example.description;
         }
         if (common.doContentType(example.cta, 'json')) {
@@ -542,7 +567,7 @@ function getAuthenticationStr(data) {
             list += (list ? sep : '') + (secDef ? secName : data.translations.secDefNone);
             let scopes = data.security[s][secName];
             if (Array.isArray(scopes) && (scopes.length > 0)) {
-                list += ' ( '+data.translations.secDefScopes+': ';
+                list += ' ( ' + data.translations.secDefScopes + ': ';
                 for (let scope in scopes) {
                     list += scopes[scope] + ' ';
                 }
@@ -557,8 +582,14 @@ function getAuthenticationStr(data) {
     return list;
 }
 
+
 function convertInner(api, options, callback) {
-    let defaults = {};
+    let defaults = {}; // @TODO: Use the planned global options function, in common.js!
+    let verbose_logging = false;
+    if (typeof options.verbose !== 'undefined') {
+        verbose_logging = (options.verbose === true);
+    }
+    dot.log = verbose_logging; // Pass verbose preferences to Global dot object
     defaults.title = 'API';
     defaults.language_tabs = [{ 'shell': 'Shell' }, { 'http': 'HTTP' }, { 'javascript': 'JavaScript' }, { 'javascript--nodejs': 'Node.JS' }, { 'ruby': 'Ruby' }, { 'python': 'Python' }, { 'java': 'Java' }, { 'go': 'Go' }];
     defaults.toc_footers = [];
@@ -566,26 +597,25 @@ function convertInner(api, options, callback) {
     defaults.search = true;
     defaults.theme = 'darkula';
     defaults.headings = 2;
-    defaults.templateCallback = function(template,stage,data) { return data; };
+    defaults.templateCallback = function(template, stage, data) { return data; };
 
-    options = Object.assign({},defaults,options);
+    options = Object.assign({}, defaults, options); // @TODO: DON'T USE Object.assign!
 
     let data = {};
-    if (options.verbose) console.warn('starting deref',api.info.title);
+    if (verbose_logging) console.warn('starting deref', api.info.title);
     if (api.components) {
         data.components = clone(api.components);
-    }
-    else {
+    } else {
         data.components = {};
     }
-    data.api = dereference(api,api,{verbose:options.verbose,$ref:'x-widdershins-oldRef'});
-    if (options.verbose) console.warn('finished deref');
-
+    data.api = dereference(api, api, { verbose: verbose_logging, $ref: 'x-widdershins-oldRef' });
+    if (verbose_logging) console.warn('finished deref');
+    // @TODO: functions pathExists(obj, path) getValue(obj, path, validator, processor, default_value)
     if (data.api.components && data.api.components.schemas && data.api.components.schemas["x-widdershins-oldRef"]) {
         delete data.api.components.schemas["x-widdershins-oldRef"];
     }
 
-    if (typeof templates === 'undefined') {
+    if (typeof templates === 'undefined') { // Global var
         templates = dot.process({ path: path.join(__dirname, 'templates', 'openapi3') });
     }
     if (options.user_templates) {
@@ -594,49 +624,45 @@ function convertInner(api, options, callback) {
     data.translations = {};
     templates.translations(data);
 
-    data.version = (data.api.info && data.api.info.version && typeof data.api.info.version === 'string' && data.api.info.version.toLowerCase().startsWith('v') ? data.api.info.version : 'v'+data.api.info.version);
+    data.version = getVersionNumber(data);
 
-    let header = {};
-    header.title = api.info.title||'API' + ' ' + data.version;
+    let header = {}; // @TODO: getHeader(options, outputYAML=true) -> Markdown string
+    header.title = api.info.title || 'API' + ' ' + data.version;
     header.language_tabs = options.language_tabs;
     header.toc_footers = [];
-    if (api.externalDocs) {
-        if (api.externalDocs.url) {
-            header.toc_footers.push('<a href="' + api.externalDocs.url + '">' + (api.externalDocs.description ? api.externalDocs.description : data.translations.externalDocs) + '</a>');
-        }
+    if (api.externalDocs && api.externalDocs.url) {
+        header.toc_footers.push('<a href="' + api.externalDocs.url + '">' + (api.externalDocs.description ? api.externalDocs.description : data.translations.externalDocs) + '</a>');
     }
     header.includes = options.includes;
     header.search = options.search;
-    header.highlight_theme = options.theme;
+    header.highlight_theme = options.theme; // @TODO: Use a function to find this right away, falling back to default (warn if not found)
     header.headingLevel = options.headings;
 
     data.options = options;
     data.header = header;
-    data.title_prefix = (data.api.info && data.api.info.version ? (data.api.info.title.trim()||'API').split(' ').join('-') : '');
+    data.title_prefix = (data.api.info && data.api.info.version ? (data.api.info.title.trim() || 'API').split(' ').join('-') : '');
     data.templates = templates;
-    data.resources = convertToToc(api,data);
+    data.resources = convertToToc(api, data);
 
     if (data.api.servers && data.api.servers.length) {
         data.servers = data.api.servers;
-    }
-    else if (options.loadedFrom) {
-        data.servers = [{url:options.loadedFrom}];
-    }
-    else {
-        data.servers = [{url:'//'}];
+    } else if (options.loadedFrom) {
+        data.servers = [{ url: options.loadedFrom }];
+    } else {
+        data.servers = [{ url: '//' }];
     }
     data.host = up.parse(data.servers[0].url).host;
     data.protocol = up.parse(data.servers[0].url).protocol;
-    if (data.protocol) data.protocol = data.protocol.replace(':','');
+    if (data.protocol) data.protocol = data.protocol.replace(':', '');
     data.baseUrl = data.servers[0].url;
-
+     // @TODO: Make this next section a function (getUtilFunctions?)
     data.utils = {};
     data.utils.yaml = yaml;
     data.utils.inspect = util.inspect;
     data.utils.safejson = safejson;
     data.utils.isPrimitive = function(t) { return (t && (t !== 'object') && (t !== 'array')) };
     data.utils.toPrimitive = common.toPrimitive;
-    data.utils.slashes = function(s) { return s.replace(/\/+/g, '/').replace(':/','://'); };
+    data.utils.slashes = function(s) { return s.replace(/\/+/g, '/').replace(':/', '://'); };
     data.utils.slugify = common.slugify;
     data.utils.getSample = common.getSample;
     data.utils.schemaToArray = common.schemaToArray;
@@ -651,40 +677,41 @@ function convertInner(api, options, callback) {
     data.utils.getResponseHeaders = getResponseHeaders;
     data.utils.getAuthenticationStr = getAuthenticationStr;
     data.utils.join = function(s) {
-        return s.split('\r').join('').split('\n').join(' ').trim();
+        return s.split('\r').join('').split('\n').join(' ').trim(); // @TODO: Incorporate split-lines package for splitting lines
     };
+    data.utils.titlecase = titlecase;
 
-    let content = '---\n'+yaml.dump(header)+'\n---\n\n';
-        data = options.templateCallback('main', 'pre', data);
-        if (data.append) { content += data.append; delete data.append; }
+    let content = '---\n' + yaml.dump(header) + '\n---\n\n'; // @TODO: Rename content -> markdown_content or something more descriptive
+    data = options.templateCallback('main', 'pre', data);
+    if (data.append) { content += data.append;
+        delete data.append; }
     try {
         content += templates.main(data);
-    }
-    catch (ex) {
+    } catch (ex) {
         return callback(ex);
     }
     data = options.templateCallback('main', 'post', data);
-    if (data.append) { content += data.append; delete data.append; }
+    if (data.append) { content += data.append;
+        delete data.append; }
     content = common.removeDupeBlankLines(content);
 
-    callback(null,content);
+    callback(null, content);
 }
 
 function convert(api, options, callback) {
     if (options.resolve) {
-        swagger2openapi.convertObj(api, {resolve:true,source:options.source,verbose:options.verbose}, function(err, sOptions) {
-        if (err) {
-            console.error(err.message);
-        }
-        else {
-            convertInner(sOptions.openapi, options, callback);
-        }});
-    }
-    else {
+        swagger2openapi.convertObj(api, { resolve: true, source: options.source, verbose: verbose_logging }, function(err, sOptions) {
+            if (err) {
+                console.error(err.message);
+            } else {
+                convertInner(sOptions.openapi, options, callback);
+            }
+        });
+    } else {
         convertInner(api, options, callback);
     }
 }
 
 module.exports = {
-    convert : convert
+    convert: convert
 };

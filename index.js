@@ -6,6 +6,14 @@ const asyncapi1 = require('./asyncapi1.js');
 const semoasa = require('./semoasa.js');
 const apiblueprint = require('./apiblueprint.js');
 
+/**
+ * Primary entry point for the app. Converts the provided markdown
+ * using the appropriate converter, and returns Markdown content.
+ *
+ * @param {object} api The parsed OpenAPI/Swagger document
+ * @param {*} options
+ * @param {*} callback
+ */
 function convert(api, options, callback) {
 
     options.samplerErrors = new Map();
