@@ -44,6 +44,14 @@ function getVersionNumber(oasObj, default_version) {
     return return_value;
 }
 
+/**
+ * Returns a reorganized version of source that
+ * matches the target document's layout.
+ *
+ * @param {object} source
+ * @param {object} data
+ * @returns {object}
+ */
 function convertToToc(source, data) {
     let resources = {};
     resources[data.translations.defaultTag] = { count: 0, methods: {} };
@@ -84,6 +92,14 @@ function convertToToc(source, data) {
     return resources;
 }
 
+/**
+ * If tagGroups have been defined, returns the
+ * tagGroup for this tag. Otherwise returns the tag.
+ *
+ * @param {string} tag
+ * @param {object} tagGroups
+ * @returns {string}
+ */
 function getTagGroup(tag, tagGroups) {
     if (tagGroups) {
         for (let group of tagGroups) {
@@ -95,7 +111,13 @@ function getTagGroup(tag, tagGroups) {
     return tag;
 }
 
-function fakeProdCons(data) { // Creates sample request/response text
+/**
+ * Populates data.consumes, data.produces, and data.bodyParameter,
+ * based on data.operation and data.method.operation
+ *
+ * @param {object} data
+ */
+function fakeProdCons(data) {
     data.produces = [];
     data.consumes = [];
     data.bodyParameter = {};
@@ -134,7 +156,15 @@ function fakeProdCons(data) { // Creates sample request/response text
     }
 }
 
-function getParameters(data) { // Gathers and formats all parameters (security and otherwise). Populates data.allHeaders, data.headerParameters, data.requiredParameters, data.requiredQueryString, data.queryString
+/**
+ * Gathers and formats all parameters (security and otherwise).
+ * Populates data.allHeaders, data.headerParameters, data.requiredParameters,
+ * data.requiredQueryString, data.queryString
+ *
+ * @param {object} data
+ * @returns {void}
+ */
+function getParameters(data) {
 
     function stupidity(varname) {
         let s = encodeURIComponent(varname);
@@ -275,8 +305,8 @@ function getParameters(data) { // Gathers and formats all parameters (security a
         for (let ess of effSecurity) {
             if (data.api.components.securitySchemes[ess]) {
                 let secScheme = data.api.components.securitySchemes[ess];
-                if (!existingAuth && (  (secScheme.type === 'oauth2') || (secScheme.type === 'openIdConnect') ||
-                                        ((secScheme.type === 'http') && (secScheme.scheme === 'bearer')) ) ) {
+                if (!existingAuth && ((secScheme.type === 'oauth2') || (secScheme.type === 'openIdConnect') ||
+                        ((secScheme.type === 'http') && (secScheme.scheme === 'bearer')))) {
                     let authHeader = {};
                     authHeader.name = 'Authorization';
                     authHeader.type = 'string';
@@ -366,7 +396,7 @@ function getBodyParameterExamples(data) {
     return content;
 }
 
-function fakeBodyParameter(data) { // @TODO: This returns the full ref instead of just properties!
+function fakeBodyParameter(data) {
     if (!data.parameters) data.parameters = [];
     let bodyParams = [];
     if (data.bodyParameter.schema) {
@@ -417,7 +447,7 @@ function getResponses(data) {
         entry.status = r;
         entry.meaning = (r === 'default' ? data.translations.responseDefault : data.translations.responseUnknown);
         let url = '';
-        let statusCodeInfo = common.statusCodes.find( function(val) { return val.code === r; } ) || common.statusCodes.find( function(val) { return val.code === r.slice(0, 1) + 'xx'; } );
+        let statusCodeInfo = common.statusCodes.find(function(val) { return val.code === r; }) || common.statusCodes.find(function(val) { return val.code === r.slice(0, 1) + 'xx'; });
         if (statusCodeInfo) {
             entry.meaning = statusCodeInfo.phrase;
             url = statusCodeInfo.spec_href;
@@ -465,11 +495,19 @@ function convertExample(ex) {
     } else return ex;
 }
 
+/**
+ * Returns example responses for each defined response
+ *
+ * @param {object} data
+ * @returns {string}
+ *
+ * @TODO: Break this up, so response examples can be next to each response schema
+ */
 function getResponseExamples(data) {
     let content = '';
     let examples = [];
-    let autoDone = {};
     for (let resp in data.operation.responses) {
+        let autoDone = {};
         let response = data.operation.responses[resp];
         for (let ct in response.content) {
             let contentType = response.content[ct];
@@ -478,7 +516,7 @@ function getResponseExamples(data) {
             if (contentType.examples) {
                 for (let ctei in contentType.examples) {
                     let example = contentType.examples[ctei];
-                    examples.push({ description: example.description || response.description, value: common.clean(convertExample(example.value)), cta: cta });
+                    examples.push({ description: resp + ' ' + data.translations.response, value: common.clean(convertExample(example.value)), cta: cta });
                 }
             } else if (contentType.example) {
                 examples.push({ description: resp + ' ' + data.translations.response, value: common.clean(convertExample(contentType.example)), cta: cta });
@@ -505,6 +543,7 @@ function getResponseExamples(data) {
     let lastDesc = '';
     for (let example of examples) {
         if (example.description && example.description !== lastDesc) {
+            // if (example.description)
             content += '> ' + example.description + '\n\n';
             lastDesc = example.description;
         }
@@ -655,7 +694,7 @@ function convertInner(api, options, callback) {
     data.protocol = up.parse(data.servers[0].url).protocol;
     if (data.protocol) data.protocol = data.protocol.replace(':', '');
     data.baseUrl = data.servers[0].url;
-     // @TODO: Make this next section a function (getUtilFunctions?)
+    // @TODO: Make this next section a function (getUtilFunctions?)
     data.utils = {};
     data.utils.yaml = yaml;
     data.utils.inspect = util.inspect;
@@ -683,16 +722,20 @@ function convertInner(api, options, callback) {
 
     let content = '---\n' + yaml.dump(header) + '\n---\n\n'; // @TODO: Rename content -> markdown_content or something more descriptive
     data = options.templateCallback('main', 'pre', data);
-    if (data.append) { content += data.append;
-        delete data.append; }
+    if (data.append) {
+        content += data.append;
+        delete data.append;
+    }
     try {
         content += templates.main(data);
     } catch (ex) {
         return callback(ex);
     }
     data = options.templateCallback('main', 'post', data);
-    if (data.append) { content += data.append;
-        delete data.append; }
+    if (data.append) {
+        content += data.append;
+        delete data.append;
+    }
     content = common.removeDupeBlankLines(content);
 
     callback(null, content);
