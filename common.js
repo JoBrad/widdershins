@@ -523,13 +523,32 @@ function getSample(orig, options, samplerOptions, api) {
 }
 
 /**
+ * Removes extra line breaks in code samples
+ * @param {string} content
+ * @returns {string}
+ */
+function removeExtraCodeBreaks(content) {
+    const code_pattern = /(```[a-zA-Z]+[^`]+\n)\n/gm;
+    let new_content = content.replace(code_pattern, '$1');
+    return new_content;
+}
+
+/**
  * Removes all occurences of 3 or more consecutive blank lines
  *
  * @param {string} content
  * @returns {string}
  */
 function removeDupeBlankLines(content) {
-    return content.replace(/[\r\n]{3,}/g, '\n\n');
+    const newline_chars = (content.indexOf('\r\n') > -1) ? '\r\n' : '\n';
+    let normalized_content = content.replace(/\r/gm, '');
+    // Remove lines that only have spaces
+    normalized_content = normalized_content.replace(/\n +\n/gm, '\n\n');
+    // Remove 3 line breaks in a row
+    normalized_content = normalized_content.replace(/[\n]{3,}/g, '\n\n');
+    // Remove 2 lines breaks in a row, in a code sample
+    normalized_content = removeExtraCodeBreaks(normalized_content);
+    return normalized_content.replace('\n', newline_chars);
 }
 
 /**
